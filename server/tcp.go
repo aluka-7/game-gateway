@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
+	"github.com/aluka-7/game-gateway/proto"
 	"github.com/aluka-7/game-gateway/utils/logger"
 	"github.com/aluka-7/utils"
+	pt "github.com/golang/protobuf/proto"
 	"net"
 	"strings"
 	"sync"
@@ -26,13 +28,13 @@ type TcpServer struct {
 
 	// 分布式服务id
 	connected int64
-	inMsg     chan *dto.CommonReq
-	outMsg    chan *dto.CommonRes
+	inMsg     chan proto.CommonReq
+	outMsg    chan proto.CommonRes
 
 	ce cache.Provider
 }
 
-func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg chan *dto.CommonReq, outMsg chan *dto.CommonRes) *TcpServer {
+func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg chan proto.CommonReq, outMsg chan proto.CommonRes) *TcpServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TcpServer{
 		addr:     addr,
@@ -111,13 +113,13 @@ func (ts *TcpServer) handleRequest(alias string, conn net.Conn) {
 	for scanner.Scan() {
 		var buf = scanner.Bytes()
 		logger.Log.Infof("Message incoming: %s", string(buf))
-		var res dto.CommonRes
-		err := json.Unmarshal(buf, &res)
+		var res proto.CommonRes
+		err := pt.Unmarshal(buf, &res)
 		if err != nil {
 			logger.Log.Errorf("TcpServer handleRequest Unmarshal Error: %+v", err)
 			break
 		}
 		res.Server = alias
-		ts.outMsg <- &res
+		ts.outMsg <- res
 	}
 }

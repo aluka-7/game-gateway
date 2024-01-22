@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
+	"github.com/aluka-7/game-gateway/proto"
 	"github.com/aluka-7/game-gateway/utils/logger"
 	"github.com/aluka-7/utils"
 	"github.com/go-redis/redis/v8"
 	"github.com/gobwas/ws/wsutil"
+	pt "github.com/golang/protobuf/proto"
 	"github.com/panjf2000/gnet/v2"
 	"golang.org/x/time/rate"
 	"sync"
@@ -30,7 +32,7 @@ type WsServer struct {
 	serviceId string
 	eng       gnet.Engine
 	// 客户端消息
-	inMsg chan *dto.CommonReq
+	inMsg chan proto.CommonReq
 	// tcp 服务地址
 	tcpAddr string
 	// tcp 服务
@@ -49,7 +51,7 @@ func NewWsServer(gatewayCfg *dto.GatewayConfig, ce cache.Provider, tcpAddr strin
 		ctx:         ctx,
 		cancel:      cancel,
 		serviceId:   utils.RandString(12),
-		inMsg:       make(chan *dto.CommonReq, 1),
+		inMsg:       make(chan proto.CommonReq, 1),
 		tcpAddr:     tcpAddr,
 		ce:          ce,
 		limiter:     rate.NewLimiter(rate.Limit(2000), 10), // 初始令牌10个，每秒产生200个令牌，相当于每秒允许同时200个连接进来
@@ -64,7 +66,7 @@ func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 	wss.ce.Delete(wss.ctx, dto.ServerUserMapKey)
 	wss.ce.Delete(wss.ctx, dto.UserServerKey)
 
-	outMsg := make(chan *dto.CommonRes, 1)
+	outMsg := make(chan proto.CommonRes, 1)
 	// 启动 游戏交互服务 -----------------------------Start
 	wss.ts = NewTcpServer(wss.tcpAddr, wss.ce, wss.gatewayCfg.GameList, wss.inMsg, outMsg)
 	go wss.ts.Run()
@@ -195,15 +197,15 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		}
 		// 自定义心跳 ------------------ Start
 
-		var req dto.CommonReq
-		err = json.Unmarshal(message.Payload, &req)
+		var req proto.CommonReq
+		err = pt.Unmarshal(message.Payload, &req)
 		if err != nil {
 			logger.Log.Errorf("conn[%v] [err=%v]", c.RemoteAddr().String(), err.Error())
 			continue
 		}
 		// 发送消息到游戏服务器
 		req.UserId = wsc.UID()
-		wss.inMsg <- &req
+		wss.inMsg <- req
 	}
 	return gnet.None
 }

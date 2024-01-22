@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+</head>
+<body>
+
+<script>
+    const socket = new WebSocket('ws://127.0.0.1:9009?sid=aef020f3-60ed-4c72-ab74-66c4144169da');
+    socket.binaryType = "arraybuffer"
+    // Connection opened
+    socket.onopen = function(event) {
+        const plainText = "Ping";
+        const output = new Uint8Array(plainText.length)
+        for(let i=0;i<plainText.length;i++){
+            output[i] = plainText.charCodeAt(i)
+        }
+        socket.send(output)
+    };
+
+    // Message from server received
+    socket.onmessage = function(event) {
+        const uint8Array = new Uint8Array(event.data);
+        let str = '';
+        for (let i = 0; i < uint8Array.length; i++) {
+            str += String.fromCharCode(uint8Array[i]);
+        }
+        console.log('WebSocket onmessage:', str);
+    };
+
+    // Connection closed
+    socket.onclose = function(event) {
+        console.log('WebSocket connection closed:', event);
+    };
+</script>
+
+</body>
+</html>

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package proto;
+
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/aluka-7/game-gateway/proto";
+
+message CommonReq {
+  string server = 1;      // 服务名称
+  int64 userId = 2;       // 用户id
+  CommonReqMsg msg = 3;   // 请求消息
+}
+
+message CommonReqMsg {
+  string event = 1;               // 事件名称
+  google.protobuf.Any data = 2;   // 数据
+}
+
+message CommonRes {
+  int64 userId = 1;                 // 用户id，为 0 发给所有人
+  string server = 2;                // 服务名称
+  string event  = 3;                // 客户端事件
+  int32 code = 4;                   // 错误码
+  google.protobuf.Any data = 5;     // 数据
+}
+
