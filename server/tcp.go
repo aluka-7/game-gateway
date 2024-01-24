@@ -4,13 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
-	"github.com/aluka-7/game-gateway/proto"
 	"github.com/aluka-7/game-gateway/utils/logger"
 	"github.com/aluka-7/utils"
-	pt "github.com/golang/protobuf/proto"
 	"net"
 	"strings"
 	"sync"
@@ -28,13 +25,13 @@ type TcpServer struct {
 
 	// 分布式服务id
 	connected int64
-	inMsg     chan proto.CommonReq
-	outMsg    chan proto.CommonRes
+	inMsg     chan *dto.CommonReq
+	outMsg    chan *dto.CommonRes
 
 	ce cache.Provider
 }
 
-func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg chan proto.CommonReq, outMsg chan proto.CommonRes) *TcpServer {
+func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg chan *dto.CommonReq, outMsg chan *dto.CommonRes) *TcpServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TcpServer{
 		addr:     addr,
@@ -51,11 +48,11 @@ func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg chan 
 // Run ...
 func (ts *TcpServer) Run() {
 	listener, err := net.Listen("tcp", ts.addr)
-	defer listener.Close()
 	if err != nil {
 		logger.Log.Errorf("TcpServer Run Error: %+v", err)
 		return
 	}
+	defer listener.Close()
 	logger.Log.Info("\033[0;32;40mGateway TCP Server Is Listening...\033[0m")
 
 	go func() {
@@ -91,13 +88,6 @@ func (ts *TcpServer) Run() {
 }
 
 func (ts *TcpServer) Stop() {
-	ts.gameConn.Range(func(server, _ any) bool {
-		for _, uid := range ts.ce.SMembers(ts.ctx, fmt.Sprintf(dto.ServerUserMapKey, utils.ToStr(server))) {
-			ts.ce.Delete(ts.ctx, fmt.Sprintf(dto.UserServerKey, utils.StrTo(uid).MustInt64()))
-		}
-		ts.ce.Delete(ts.ctx, fmt.Sprintf(dto.ServerUserMapKey, utils.ToStr(server)))
-		return true
-	})
 	close(ts.inMsg)
 	close(ts.outMsg)
 }
@@ -113,8 +103,8 @@ func (ts *TcpServer) handleRequest(alias string, conn net.Conn) {
 	for scanner.Scan() {
 		var buf = scanner.Bytes()
 		logger.Log.Infof("Message incoming: %s", string(buf))
-		var res proto.CommonRes
-		err := pt.Unmarshal(buf, &res)
+		var res = new(dto.CommonRes)
+		err := json.Unmarshal(buf, res)
 		if err != nil {
 			logger.Log.Errorf("TcpServer handleRequest Unmarshal Error: %+v", err)
 			break

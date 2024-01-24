@@ -3,15 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
-	"github.com/aluka-7/game-gateway/proto"
 	"github.com/aluka-7/game-gateway/utils/logger"
 	"github.com/aluka-7/utils"
-	"github.com/go-redis/redis/v8"
 	"github.com/gobwas/ws/wsutil"
-	pt "github.com/golang/protobuf/proto"
 	"github.com/panjf2000/gnet/v2"
 	"golang.org/x/time/rate"
 	"sync"
@@ -32,7 +28,7 @@ type WsServer struct {
 	serviceId string
 	eng       gnet.Engine
 	// 客户端消息
-	inMsg chan proto.CommonReq
+	inMsg chan *dto.CommonReq
 	// tcp 服务地址
 	tcpAddr string
 	// tcp 服务
@@ -51,7 +47,7 @@ func NewWsServer(gatewayCfg *dto.GatewayConfig, ce cache.Provider, tcpAddr strin
 		ctx:         ctx,
 		cancel:      cancel,
 		serviceId:   utils.RandString(12),
-		inMsg:       make(chan proto.CommonReq, 1),
+		inMsg:       make(chan *dto.CommonReq, 1),
 		tcpAddr:     tcpAddr,
 		ce:          ce,
 		limiter:     rate.NewLimiter(rate.Limit(2000), 10), // 初始令牌10个，每秒产生200个令牌，相当于每秒允许同时200个连接进来
@@ -62,11 +58,7 @@ func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 	wss.eng = eng
 	logger.Log.Info("\033[0;32;40mGateway WS Server Is Listening...\033[0m")
 
-	// 初始化一些数据
-	wss.ce.Delete(wss.ctx, dto.ServerUserMapKey)
-	wss.ce.Delete(wss.ctx, dto.UserServerKey)
-
-	outMsg := make(chan proto.CommonRes, 1)
+	outMsg := make(chan *dto.CommonRes, 1)
 	// 启动 游戏交互服务 -----------------------------Start
 	wss.ts = NewTcpServer(wss.tcpAddr, wss.ce, wss.gatewayCfg.GameList, wss.inMsg, outMsg)
 	go wss.ts.Run()
@@ -90,13 +82,14 @@ func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 				}
 			} else { // 发给对应游戏服务的所有用户
 				wss.connections.Range(func(uid, c any) bool {
-					serverMembers := wss.ce.SMembers(wss.ctx, fmt.Sprintf(dto.ServerUserMapKey, msg.Server))
-					if utils.Contains(serverMembers, utils.ToStr(uid)) >= 0 {
-						if conn, ok := c.(gnet.Conn); ok {
-							err := wsutil.WriteServerBinary(conn, payload)
-							if err != nil {
-								logger.Log.Errorf("WsServer WriteServerMessage Error: %+v", err)
-							}
+					if conn, ok := c.(gnet.Conn); ok {
+						wsc, ok := conn.Context().(*wsCodec)
+						if !ok || wsc.String("server") != msg.Server {
+							return true
+						}
+						err := wsutil.WriteServerBinary(conn, payload)
+						if err != nil {
+							logger.Log.Errorf("WsServer WriteServerMessage Error: %+v", err)
 						}
 					}
 					return true
@@ -126,19 +119,6 @@ func (wss *WsServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 	}
 	// 删除对应连接
 	wss.connections.Delete(wsc.UID())
-
-	// 删除服务-用户关系 ----------------- Start
-	rdb := wss.ce.Client().(*redis.Client)
-	if userServer := wss.ce.String(wss.ctx, fmt.Sprintf(dto.UserServerKey, wsc.UID())); len(userServer) > 0 { // 用户当前所在服务
-		pipe := rdb.Pipeline()
-		pipe.SRem(wss.ctx, fmt.Sprintf(dto.ServerUserMapKey, userServer), wsc.UID())
-		pipe.Del(wss.ctx, fmt.Sprintf(dto.UserServerKey, wsc.UID()))
-		_, err = pipe.Exec(wss.ctx)
-		if err != nil {
-			logger.Log.Errorf("Redis Pipeline Exec Error: %+v", err)
-		}
-	}
-	// 删除服务-用户关系 ----------------- End
 
 	logger.Log.Infof("conn[%v] disconnected", c.RemoteAddr().String())
 	return gnet.None
@@ -197,15 +177,18 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		}
 		// 自定义心跳 ------------------ Start
 
-		var req proto.CommonReq
-		err = pt.Unmarshal(message.Payload, &req)
+		var req = new(dto.CommonReq)
+		err = json.Unmarshal(message.Payload, req)
 		if err != nil {
 			logger.Log.Errorf("conn[%v] [err=%v]", c.RemoteAddr().String(), err.Error())
 			continue
 		}
-		// 发送消息到游戏服务器
-		req.UserId = wsc.UID()
-		wss.inMsg <- req
+		if utils.Contains(wss.gatewayCfg.GameList, req.Server) > -1 {
+			wsc.Set("server", req.Server)
+			// 发送消息到游戏服务器
+			req.UserId = wsc.UID()
+			wss.inMsg <- req
+		}
 	}
 	return gnet.None
 }
