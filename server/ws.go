@@ -119,12 +119,12 @@ func (wss *WsServer) OnClose(c gnet.Conn, err error) (action gnet.Action) {
 		return gnet.Close
 	}
 	if err != nil {
-		logger.Log.Errorf("error occurred on connection=%s, %v", c.RemoteAddr().String(), err)
+		logger.Log.Errorf("WsServer OnClose Error:%+v", err)
 	}
 	// 删除对应连接
 	wss.connections.Delete(wsc.UID())
 
-	logger.Log.Infof("conn[%v] disconnected", c.RemoteAddr().String())
+	logger.Log.Infof("user_id[%d] disconnected", wsc.UID())
 	return gnet.None
 }
 
@@ -150,7 +150,7 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 			// 查找获取旧连接并关闭
 			if oc, ok := wss.connections.Load(us.Id); ok {
 				if conn, ok := oc.(gnet.Conn); ok {
-					logger.Log.Infof("conn[%v] disconnected", conn.RemoteAddr().String())
+					logger.Log.Infof("user_id[%d] disconnected", wsc.UID())
 					conn.Close()
 				}
 				wss.connections.Delete(us.UserId)
@@ -184,7 +184,7 @@ func (wss *WsServer) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		var req = new(dto.CommonReq)
 		err = json.Unmarshal(message.Payload, req)
 		if err != nil {
-			logger.Log.Errorf("conn[%v] [err=%v]", c.RemoteAddr().String(), err.Error())
+			logger.Log.Errorf("user_id[%d] [err=%v]", wsc.UID(), err.Error())
 			continue
 		}
 		if utils.Contains(wss.gatewayCfg.GameList, req.Server) > -1 {
