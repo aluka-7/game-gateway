@@ -74,6 +74,10 @@ func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 			if msg.UserId != 0 { // 发给指定用户
 				if c, ok := wss.connections.Load(msg.UserId); ok {
 					if conn, ok := c.(gnet.Conn); ok {
+						wsc, ok := conn.Context().(*wsCodec)
+						if !ok || wsc.String("server") != msg.Server {
+							continue
+						}
 						err := wsutil.WriteServerBinary(conn, payload)
 						if err != nil {
 							logger.Log.Errorf("WsServer WriteServerMessage Error: %+v", err)
