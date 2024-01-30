@@ -25,13 +25,13 @@ type TcpServer struct {
 
 	// 分布式服务id
 	connected int64
-	inMsg     chan *dto.CommonReq
-	outMsg    chan *dto.CommonRes
+	inMsg     <-chan *dto.CommonReq
+	outMsg    chan<- *dto.CommonRes
 
 	ce cache.Provider
 }
 
-func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg chan *dto.CommonReq, outMsg chan *dto.CommonRes) *TcpServer {
+func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg <-chan *dto.CommonReq, outMsg chan<- *dto.CommonRes) *TcpServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TcpServer{
 		addr:     addr,
@@ -88,8 +88,6 @@ func (ts *TcpServer) Run() {
 }
 
 func (ts *TcpServer) Stop() {
-	close(ts.inMsg)
-	close(ts.outMsg)
 }
 
 func (ts *TcpServer) handleRequest(alias string, conn net.Conn) {

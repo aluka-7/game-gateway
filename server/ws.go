@@ -27,8 +27,10 @@ type WsServer struct {
 	// 分布式服务id
 	serviceId string
 	eng       gnet.Engine
-	// 客户端消息
+	// req 消息
 	inMsg chan *dto.CommonReq
+	// res 消息
+	outMsg chan *dto.CommonRes
 	// tcp 服务地址
 	tcpAddr string
 	// tcp 服务
@@ -48,6 +50,7 @@ func NewWsServer(gatewayCfg *dto.GatewayConfig, ce cache.Provider, tcpAddr strin
 		cancel:      cancel,
 		serviceId:   utils.RandString(12),
 		inMsg:       make(chan *dto.CommonReq, 1),
+		outMsg:      make(chan *dto.CommonRes, 1),
 		tcpAddr:     tcpAddr,
 		ce:          ce,
 		limiter:     rate.NewLimiter(rate.Limit(2000), 10), // 初始令牌10个，每秒产生200个令牌，相当于每秒允许同时200个连接进来
@@ -58,14 +61,13 @@ func (wss *WsServer) OnBoot(eng gnet.Engine) gnet.Action {
 	wss.eng = eng
 	logger.Log.Info("\033[0;32;40mGateway WS Server Is Listening...\033[0m")
 
-	outMsg := make(chan *dto.CommonRes, 1)
 	// 启动 游戏交互服务 -----------------------------Start
-	wss.ts = NewTcpServer(wss.tcpAddr, wss.ce, wss.gatewayCfg.GameList, wss.inMsg, outMsg)
+	wss.ts = NewTcpServer(wss.tcpAddr, wss.ce, wss.gatewayCfg.GameList, wss.inMsg, wss.outMsg)
 	go wss.ts.Run()
 	// 启动 游戏交互服务 -----------------------------End
 
 	go func() {
-		for msg := range outMsg {
+		for msg := range wss.outMsg {
 			payload, err := json.Marshal(msg)
 			if err != nil {
 				logger.Log.Errorf("WsServer OnBoot Marshal Error: %+v", err)
@@ -204,6 +206,8 @@ func (wss *WsServer) OnTick() (delay time.Duration, action gnet.Action) {
 
 func (wss *WsServer) OnShutdown(eng gnet.Engine) {
 	// 停止tcp服务
+	close(wss.inMsg)
+	close(wss.outMsg)
 	wss.ts.Stop()
 	logger.Log.Info("\033[0;33;40mGateway Ws Server Will Be Shutdown!\033[0m")
 	wss.cancel()
