@@ -67,7 +67,7 @@ fmt.Println("解码：" + string(dec))
 ```go
 var cfg dto.TcpConfig
 if err = conf.Clazz("base", "client", "tcp", wire.GateWaySystemId, &cfg); err != nil {
-panic("加载TCP Client 连接配置出错")
+    panic("加载TCP Client 连接配置出错")
 }
 
 // request 消息通道
