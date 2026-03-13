@@ -9,14 +9,14 @@ package wire
 import (
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
-	"github.com/aluka-7/game-gateway/server"
+	"github.com/aluka-7/game-gateway/ws"
 	"github.com/panjf2000/gnet/v2"
 )
 
 // Injectors from wire.go:
 
 func InitializeWsServer(gatewayConfig *dto.GatewayConfig, provider cache.Provider, string2 string) gnet.EventHandler {
-	eventHandler := server.NewWsServer(gatewayConfig, provider, string2)
+	eventHandler := ws.NewWsServer(gatewayConfig, provider, string2)
 	return eventHandler
 }
 
