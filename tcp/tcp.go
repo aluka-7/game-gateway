@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
 	"github.com/aluka-7/game-gateway/utils/logger"
@@ -11,10 +12,14 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 type TcpServer struct {
 	addr string
+
+	listener net.Listener
+	stopOnce sync.Once
 
 	gameConn sync.Map
 	gameList []string
@@ -28,7 +33,8 @@ type TcpServer struct {
 	inMsg     <-chan *dto.CommonReq
 	outMsg    chan<- *dto.CommonRes
 
-	ce cache.Provider
+	ce     cache.Provider
+	closed atomic.Bool
 }
 
 func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg <-chan *dto.CommonReq, outMsg chan<- *dto.CommonRes) *TcpServer {
@@ -52,6 +58,7 @@ func (ts *TcpServer) Run() {
 		logger.Log.Errorf("TcpServer Run Error: %+v", err)
 		return
 	}
+	ts.listener = listener
 	defer listener.Close()
 	logger.Log.Info("\033[0;32;40mGateway TCP Server Is Listening...\033[0m")
 
@@ -71,6 +78,9 @@ func (ts *TcpServer) Run() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if ts.closed.Load() || errors.Is(err, net.ErrClosed) {
+				return
+			}
 			logger.Log.Errorf("TcpServer Run Accept Error: %+v", err)
 			return
 		}
@@ -88,6 +98,17 @@ func (ts *TcpServer) Run() {
 }
 
 func (ts *TcpServer) Stop() {
+	ts.stopOnce.Do(func() {
+		ts.closed.Store(true)
+		ts.cancel()
+		if ts.listener != nil {
+			_ = ts.listener.Close()
+		}
+		ts.gameConn.Range(func(_, value any) bool {
+			_ = value.(net.Conn).Close()
+			return true
+		})
+	})
 }
 
 func (ts *TcpServer) handleRequest(alias string, conn net.Conn) {

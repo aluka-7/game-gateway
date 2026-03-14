@@ -10,6 +10,7 @@ type Client struct {
 
 func NewClient(uid int64, conn gnet.Conn) *Client {
 	return &Client{
+		UID:  uid,
 		Conn: conn,
 		Send: make(chan []byte, 64),
 	}

@@ -120,13 +120,16 @@ func (w *Server) sendToUser(uid int64, payload []byte) {
 
 // broadcast 广播
 func (w *Server) broadcast(server string, payload []byte) {
-	w.connMgr.Range(func(uid int64, client *conn.Client) {
+	for _, item := range w.connMgr.Snapshot() {
+		client := item.Client
 		wsc := client.Conn.Context().(*wsCodec)
 		if wsc.String("server") != server {
-			return
+			continue
 		}
-		wsutil.WriteServerBinary(client.Conn, payload)
-	})
+		if err := wsutil.WriteServerBinary(client.Conn, payload); err != nil {
+			logger.Log.Error(err)
+		}
+	}
 }
 
 func (w *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
