@@ -8,7 +8,6 @@ import (
 	"github.com/aluka-7/cache"
 	"github.com/aluka-7/game-gateway/dto"
 	"github.com/aluka-7/game-gateway/utils/logger"
-	"github.com/aluka-7/utils"
 	"net"
 	"strings"
 	"sync"
@@ -21,8 +20,8 @@ type TcpServer struct {
 	listener net.Listener
 	stopOnce sync.Once
 
-	gameConn sync.Map
-	gameList []string
+	gameConn     sync.Map
+	allowedGames map[string]struct{}
 
 	// 上下文
 	ctx    context.Context
@@ -40,14 +39,14 @@ type TcpServer struct {
 func NewTcpServer(addr string, ce cache.Provider, gameList []string, inMsg <-chan *dto.CommonReq, outMsg chan<- *dto.CommonRes) *TcpServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TcpServer{
-		addr:     addr,
-		ctx:      ctx,
-		gameConn: sync.Map{},
-		gameList: gameList,
-		cancel:   cancel,
-		inMsg:    inMsg,
-		outMsg:   outMsg,
-		ce:       ce,
+		addr:         addr,
+		ctx:          ctx,
+		gameConn:     sync.Map{},
+		allowedGames: buildAllowedGames(gameList),
+		cancel:       cancel,
+		inMsg:        inMsg,
+		outMsg:       outMsg,
+		ce:           ce,
 	}
 }
 
@@ -90,11 +89,29 @@ func (ts *TcpServer) Run() {
 			logger.Log.Errorf("TcpServer Run ReadString Error: %+v", err)
 			continue
 		}
-		if utils.Contains(ts.gameList, strings.TrimSpace(alias)) < 0 {
+		cleanAlias := strings.TrimSpace(alias)
+		if !ts.isAllowedGame(cleanAlias) {
 			continue
 		}
-		go ts.handleRequest(strings.TrimSpace(alias), conn)
+		go ts.handleRequest(cleanAlias, conn)
 	}
+}
+
+func buildAllowedGames(gameList []string) map[string]struct{} {
+	allowedGames := make(map[string]struct{}, len(gameList))
+	for _, game := range gameList {
+		trimmed := strings.TrimSpace(game)
+		if trimmed == "" {
+			continue
+		}
+		allowedGames[trimmed] = struct{}{}
+	}
+	return allowedGames
+}
+
+func (ts *TcpServer) isAllowedGame(alias string) bool {
+	_, ok := ts.allowedGames[alias]
+	return ok
 }
 
 func (ts *TcpServer) Stop() {
