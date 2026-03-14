@@ -94,13 +94,13 @@ go func() {
 
 // tcp连接
 for {
-    conn, err := net.Dial("tcp", cfg.Addr)
+    client, err := net.Dial("tcp", cfg.Addr)
     if err != nil {
         logger.Log.Errorf("Gateway Tcp Connect Error: %+v", err)
         time.Sleep(time.Second * 1)
         continue
     }
-    conn.Write([]byte(fmt.Sprintf("%s\n", dto.GameName))) // 发送消息证明自己是哪个游戏服务
+    client.Write([]byte(fmt.Sprintf("%s\n", dto.GameName))) // 发送消息证明自己是哪个游戏服务
 
     exitChan := make(chan struct{})
     // 处理 response 消息
@@ -111,7 +111,7 @@ for {
                 return
             default:
                 resByte, _ := json.Marshal(res)
-                _, err := conn.Write(append(resByte, '\n'))
+                _, err := client.Write(append(resByte, '\n'))
                 if err != nil {
                     logger.Log.Errorf("Push Write Error: %+v, Msg: %+v", err, res)
                 }
@@ -120,7 +120,7 @@ for {
     }(exitChan)
 
     // 处理 request 消息
-    scanner := bufio.NewScanner(conn)
+    scanner := bufio.NewScanner(client)
     for scanner.Scan() {
         var buf = scanner.Bytes()
         logger.Log.Info("recv message: ", string(buf))

@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 )
 
+var wsQueryParamRegexp = regexp.MustCompile(`[?&]([^=]+)=([0-9a-zA-Z\-]+)`)
+
 type wsCodec struct {
 	sync.RWMutex
 	data     map[string]interface{} // session data store
@@ -107,8 +109,7 @@ func (w *wsCodec) upgrade(c gnet.Conn) (ok bool, params map[string]string, actio
 	}
 	buf := &w.buf
 	// 获取连接参数 ------------------------- Start
-	r := regexp.MustCompile(`[?&]([^=]+)=([0-9a-zA-Z\-]+)`)
-	matches := r.FindAllStringSubmatch(buf.String(), -1)
+	matches := wsQueryParamRegexp.FindAllStringSubmatch(buf.String(), -1)
 	params = make(map[string]string)
 	for _, match := range matches {
 		params[match[1]] = match[2]
@@ -132,11 +133,6 @@ func (w *wsCodec) upgrade(c gnet.Conn) (ok bool, params map[string]string, actio
 	}
 	buf.Next(skipN)
 	logger.Log.Infof("conn[%v] upgrade websocket protocol! Handshake: %v", c.RemoteAddr().String(), hs)
-	if err != nil {
-		logger.Log.Infof("conn[%v] [err=%v]", c.RemoteAddr().String(), err.Error())
-		action = gnet.Close
-		return
-	}
 	ok = true
 	w.upgraded = true
 	return
@@ -226,7 +222,6 @@ func (w *wsCodec) readWsMessages() (messages []wsutil.Message, err error) {
 					return
 				}
 			} else { //数据不完整
-				fmt.Println(in.Len(), dataLen)
 				logger.Log.Infof("incomplete data")
 				return
 			}

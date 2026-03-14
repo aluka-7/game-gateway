@@ -8,7 +8,7 @@ type Client struct {
 	Send chan []byte
 }
 
-func NewClient(conn gnet.Conn) *Client {
+func NewClient(uid int64, conn gnet.Conn) *Client {
 	return &Client{
 		Conn: conn,
 		Send: make(chan []byte, 64),

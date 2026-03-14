@@ -33,3 +33,11 @@ func (m *Manager) Remove(uid int64) {
 	delete(m.conns, uid)
 	m.mu.Unlock()
 }
+
+func (m *Manager) Range(fn func(uid int64, cli *Client)) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for uid, cli := range m.conns {
+		fn(uid, cli)
+	}
+}

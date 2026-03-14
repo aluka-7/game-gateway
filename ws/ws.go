@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/aluka-7/cache"
+	"github.com/aluka-7/game-gateway/conn"
 	"github.com/aluka-7/game-gateway/dto"
 	"github.com/aluka-7/game-gateway/tcp"
 	"github.com/aluka-7/game-gateway/utils/logger"
@@ -26,7 +27,7 @@ type Server struct {
 	cancel context.CancelFunc
 
 	// 连接管理器
-	connMgr *ConnManager
+	connMgr *conn.Manager
 
 	// req 消息
 	inMsg chan *dto.CommonReq
@@ -53,7 +54,7 @@ func NewWsServer(cfg *dto.GatewayConfig, ce cache.Provider, tcpAddr string) gnet
 		cache:   ce,
 		tcpAddr: tcpAddr,
 
-		connMgr: NewConnManager(),
+		connMgr: conn.NewManager(),
 
 		inMsg:   make(chan *dto.CommonReq, 1024),
 		outMsg:  make(chan *dto.CommonRes, 1024),
@@ -107,11 +108,11 @@ func (w *Server) dispatch(msg *dto.CommonRes) {
 
 // sendToUser 发送给用户
 func (w *Server) sendToUser(uid int64, payload []byte) {
-	conn, ok := w.connMgr.Get(uid)
+	client, ok := w.connMgr.Get(uid)
 	if !ok {
 		return
 	}
-	err := wsutil.WriteServerBinary(conn, payload)
+	err := wsutil.WriteServerBinary(client.Conn, payload)
 	if err != nil {
 		logger.Log.Error(err)
 	}
@@ -119,12 +120,12 @@ func (w *Server) sendToUser(uid int64, payload []byte) {
 
 // broadcast 广播
 func (w *Server) broadcast(server string, payload []byte) {
-	w.connMgr.Range(func(uid int64, conn gnet.Conn) {
-		wsc := conn.Context().(*wsCodec)
+	w.connMgr.Range(func(uid int64, client *conn.Client) {
+		wsc := client.Conn.Context().(*wsCodec)
 		if wsc.String("server") != server {
 			return
 		}
-		wsutil.WriteServerBinary(conn, payload)
+		wsutil.WriteServerBinary(client.Conn, payload)
 	})
 }
 
@@ -169,7 +170,8 @@ func (w *Server) bindUser(c gnet.Conn, params map[string]string) bool {
 	if us.Id == 0 {
 		return false
 	}
-	w.connMgr.Add(us.Id, c)
+	client := conn.NewClient(us.Id, c)
+	w.connMgr.Add(us.Id, client)
 	wsc.Bind(us.Id)
 	return true
 }
