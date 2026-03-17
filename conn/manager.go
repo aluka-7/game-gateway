@@ -21,7 +21,7 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) Add(uid int64, c *Client) {
+func (m *Manager) Set(uid int64, c *Client) {
 	m.mu.Lock()
 	m.conns[uid] = c
 	m.mu.Unlock()

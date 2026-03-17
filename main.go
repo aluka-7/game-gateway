@@ -34,11 +34,19 @@ func App(conf configuration.Configuration) {
 	web.App(func(eng *echo.Echo) {
 		// Start serving!
 		go func() {
-			err := gnet.Run(wss, wc.Addr, gnet.WithMulticore(true), gnet.WithReusePort(true), gnet.WithTicker(true), gnet.WithTCPKeepAlive(time.Minute*5))
+			err := gnet.Run(
+				wss,
+				wc.Addr,
+				gnet.WithMulticore(true),
+				gnet.WithReusePort(true),
+				gnet.WithTicker(true),
+				gnet.WithTCPKeepAlive(time.Minute*5),
+			)
 			if err != nil {
 				panic(fmt.Sprintf("gnet run error: %+v", err))
 			}
 		}()
+		fmt.Println(fmt.Sprintf("⇨ websocket server started on \u001B[0;32;40m%s\u001B[0m", wc.Addr))
 	}, wire.SystemId, conf)
 }
 

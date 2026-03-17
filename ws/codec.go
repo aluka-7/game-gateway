@@ -2,23 +2,15 @@ package ws
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/aluka-7/cache"
-	"github.com/aluka-7/game-gateway/dto"
 	"github.com/aluka-7/game-gateway/utils/logger"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/panjf2000/gnet/v2"
 	"io"
-	"regexp"
 	"sync"
 	"sync/atomic"
 )
-
-var wsQueryParamRegexp = regexp.MustCompile(`[?&]([^=]+)=([0-9a-zA-Z\-]+)`)
 
 type wsCodec struct {
 	sync.RWMutex
@@ -38,15 +30,6 @@ type wsMessageBuf struct {
 type readWrite struct {
 	io.Reader
 	io.Writer
-}
-
-func (w *wsCodec) getSession(ctx context.Context, ce cache.Provider, sid string) (us dto.UserSession) {
-	if str := ce.String(ctx, fmt.Sprintf(dto.SessionKey, sid)); len(str) > 0 {
-		if err := json.Unmarshal([]byte(str), &us); err != nil {
-			logger.Log.Errorf("解析user session{%s}出错[%v]", sid, err)
-		}
-	}
-	return
 }
 
 func (w *wsCodec) Bind(uid int64) error {
@@ -102,19 +85,12 @@ func (w *wsCodec) String(key string) string {
 	return value
 }
 
-func (w *wsCodec) upgrade(c gnet.Conn) (ok bool, params map[string]string, action gnet.Action) {
+func (w *wsCodec) upgrade(c gnet.Conn) (ok bool, action gnet.Action) {
 	if w.upgraded {
 		ok = true
 		return
 	}
 	buf := &w.buf
-	// 获取连接参数 ------------------------- Start
-	matches := wsQueryParamRegexp.FindAllStringSubmatch(buf.String(), -1)
-	params = make(map[string]string)
-	for _, match := range matches {
-		params[match[1]] = match[2]
-	}
-	// 获取连接参数 ------------------------- End
 
 	tmpReader := bytes.NewReader(buf.Bytes())
 	oldLen := tmpReader.Len()

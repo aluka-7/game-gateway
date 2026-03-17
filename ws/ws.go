@@ -14,6 +14,16 @@ import (
 	"time"
 )
 
+const (
+	ServerSystem = "system"
+)
+
+const (
+	EventAuth = "auth"
+	EventPing = "ping"
+	EventPong = "pong"
+)
+
 type Server struct {
 	gnet.BuiltinEventEngine
 
@@ -123,6 +133,7 @@ func (w *Server) broadcast(server string, payload []byte) {
 	for _, item := range w.connMgr.Snapshot() {
 		client := item.Client
 		wsc := client.Conn.Context().(*wsCodec)
+		// 判断用户所处的服务是否一致
 		if wsc.String("server") != server {
 			continue
 		}
@@ -136,7 +147,8 @@ func (w *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	if !w.limiter.Allow() {
 		return nil, gnet.Close
 	}
-	c.SetContext(new(wsCodec))
+	wc := new(wsCodec)
+	c.SetContext(wc)
 	return nil, gnet.None
 }
 
@@ -154,28 +166,18 @@ func (w *Server) OnTraffic(c gnet.Conn) gnet.Action {
 	if wsc.readBufferBytes(c) == gnet.Close {
 		return gnet.Close
 	}
-	ok, params, action := wsc.upgrade(c)
+	ok, action := wsc.upgrade(c)
 	if !ok {
 		return action
-	}
-	if len(params) > 0 {
-		if !w.bindUser(c, params) {
-			return gnet.Close
-		}
 	}
 	return w.handleMessages(c, wsc)
 }
 
-func (w *Server) bindUser(c gnet.Conn, params map[string]string) bool {
-	sid := params["sid"]
+func (w *Server) bindUser(c gnet.Conn, uid int64) bool {
 	wsc := c.Context().(*wsCodec)
-	us := wsc.getSession(w.ctx, w.cache, sid)
-	if us.Id == 0 {
-		return false
-	}
-	client := conn.NewClient(us.Id, c)
-	w.connMgr.Add(us.Id, client)
-	wsc.Bind(us.Id)
+	client := conn.NewClient(uid, c)
+	w.connMgr.Set(uid, client)
+	wsc.Bind(uid)
 	return true
 }
 
@@ -184,24 +186,77 @@ func (w *Server) handleMessages(c gnet.Conn, wsc *wsCodec) gnet.Action {
 	if err != nil {
 		return gnet.Close
 	}
-	for _, msg := range messages {
-		if string(msg.Payload) == "Ping" {
-			wsutil.WriteServerBinary(c, []byte("Pong"))
+	for _, message := range messages {
+		var msg dto.CommonReq
+		if err := json.Unmarshal(message.Payload, &msg); err != nil {
 			continue
 		}
-		var req dto.CommonReq
-		if err := json.Unmarshal(msg.Payload, &req); err != nil {
-			continue
+
+		switch msg.Server {
+		case ServerSystem: // 系统服务
+			switch msg.Event {
+			case EventAuth: // 用户校验事件
+				var req dto.AuthReq
+				err = json.Unmarshal(msg.Data, &req)
+				if err != nil {
+					logger.Log.Errorf("json.Unmarshal error: %+v", err)
+					return gnet.Close
+				}
+				user := Intercept(w.cache, req.Token)
+				if user == nil {
+					return gnet.Close
+				}
+				wsc.Bind(user.User.Id)
+				w.bindUser(c, user.User.Id)
+			case EventPing: // 用户心跳事件
+				if wsc.UID() == 0 {
+					return gnet.Close
+				}
+				return w.handlePing(wsc.UID())
+			}
+		default:
+			if wsc.uid == 0 {
+				return gnet.Close
+			}
+			// 绑定服务
+			wsc.Set("server", msg.Server)
 		}
-		req.UserId = wsc.UID()
-		w.inMsg <- &req
+
+		msg.UserId = wsc.UID()
+		w.inMsg <- &msg
 	}
 	return gnet.None
 }
 
+func (w *Server) handlePing(uid int64) gnet.Action {
+	client, ok := w.connMgr.Get(uid)
+	if !ok {
+		return gnet.Close
+	}
+	client.LastHeartbeat = time.Now().Unix()
+	w.connMgr.Set(uid, client)
+
+	// pong
+	res := dto.CommonRes{
+		Server: ServerSystem,
+		Event:  EventPong,
+		Code:   0,
+	}
+	payload, _ := json.Marshal(res)
+	w.sendToUser(uid, payload)
+	return gnet.None
+}
+
 func (w *Server) OnTick() (delay time.Duration, action gnet.Action) {
+	// 定时踢掉死链接
+	now := time.Now().Unix()
+	w.connMgr.Range(func(uid int64, cli *conn.Client) {
+		if now-cli.LastHeartbeat > 30 {
+			cli.Conn.Close()
+		}
+	})
 	logger.Log.Infof("\033[0;33;40m[connected-count=%v]\033[0m", w.engine.CountConnections())
-	return 60 * time.Second, gnet.None
+	return 30 * time.Second, gnet.None
 }
 
 func (w *Server) OnShutdown(eng gnet.Engine) {
