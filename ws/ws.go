@@ -11,6 +11,7 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/panjf2000/gnet/v2"
 	"golang.org/x/time/rate"
+	"sync"
 	"time"
 )
 
@@ -36,8 +37,11 @@ type Server struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// 连接管理器
+	// 已认证连接
 	connMgr *conn.Manager
+
+	// 未认证连接
+	unauthConn sync.Map
 
 	// req 消息
 	inMsg chan *dto.CommonReq
@@ -148,7 +152,11 @@ func (w *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 		return nil, gnet.Close
 	}
 	wc := new(wsCodec)
+	wc.ConnectTime = time.Now().Unix() // 设置连接时间
 	c.SetContext(wc)
+
+	// 放入未认证集合
+	w.unauthConn.Store(c, wc)
 	return nil, gnet.None
 }
 
@@ -188,7 +196,8 @@ func (w *Server) handleMessages(c gnet.Conn, wsc *wsCodec) gnet.Action {
 	}
 	for _, message := range messages {
 		var msg dto.CommonReq
-		if err := json.Unmarshal(message.Payload, &msg); err != nil {
+		if err = json.Unmarshal(message.Payload, &msg); err != nil {
+			logger.Log.Errorf("message parsing error: %+v", err)
 			continue
 		}
 
@@ -206,13 +215,19 @@ func (w *Server) handleMessages(c gnet.Conn, wsc *wsCodec) gnet.Action {
 				if user == nil {
 					return gnet.Close
 				}
+				// 连接绑定
 				wsc.Bind(user.User.Id)
 				w.bindUser(c, user.User.Id)
+
+				// 移出未认证集合
+				w.unauthConn.Delete(c)
+				continue
 			case EventPing: // 用户心跳事件
 				if wsc.UID() == 0 {
 					return gnet.Close
 				}
-				return w.handlePing(wsc.UID())
+				w.handlePing(wsc.UID())
+				continue
 			}
 		default:
 			if wsc.uid == 0 {
@@ -228,10 +243,10 @@ func (w *Server) handleMessages(c gnet.Conn, wsc *wsCodec) gnet.Action {
 	return gnet.None
 }
 
-func (w *Server) handlePing(uid int64) gnet.Action {
+func (w *Server) handlePing(uid int64) {
 	client, ok := w.connMgr.Get(uid)
 	if !ok {
-		return gnet.Close
+		return
 	}
 	client.LastHeartbeat = time.Now().Unix()
 	w.connMgr.Set(uid, client)
@@ -244,7 +259,7 @@ func (w *Server) handlePing(uid int64) gnet.Action {
 	}
 	payload, _ := json.Marshal(res)
 	w.sendToUser(uid, payload)
-	return gnet.None
+	return
 }
 
 func (w *Server) OnTick() (delay time.Duration, action gnet.Action) {
@@ -252,9 +267,23 @@ func (w *Server) OnTick() (delay time.Duration, action gnet.Action) {
 	now := time.Now().Unix()
 	w.connMgr.Range(func(uid int64, cli *conn.Client) {
 		if now-cli.LastHeartbeat > 30 {
+			logger.Log.Infof("clear heartbeat timeout client, uid %d", uid)
 			cli.Conn.Close()
 		}
 	})
+
+	// 定时踢掉未认证连接
+	w.unauthConn.Range(func(key, value any) bool {
+		conn := key.(gnet.Conn)
+		ws := value.(*wsCodec)
+		if now-ws.ConnectTime > 5 { // 5秒未 auth
+			logger.Log.Infof("clear unauthenticated client")
+			conn.Close()
+			w.unauthConn.Delete(key)
+		}
+		return true
+	})
+
 	logger.Log.Infof("\033[0;33;40m[connected-count=%v]\033[0m", w.engine.CountConnections())
 	return 30 * time.Second, gnet.None
 }

@@ -14,11 +14,12 @@ import (
 
 type wsCodec struct {
 	sync.RWMutex
-	data     map[string]interface{} // session data store
-	uid      int64
-	upgraded bool         // 链接是否升级
-	buf      bytes.Buffer // 从实际socket中读取到的数据缓存
-	wsMsgBuf wsMessageBuf // ws 消息缓存
+	data        map[string]interface{} // session data store
+	uid         int64
+	upgraded    bool         // 链接是否升级
+	buf         bytes.Buffer // 从实际socket中读取到的数据缓存
+	wsMsgBuf    wsMessageBuf // ws 消息缓存
+	ConnectTime int64        // 连接时间
 }
 
 type wsMessageBuf struct {

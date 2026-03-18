@@ -38,6 +38,7 @@ func App(conf configuration.Configuration) {
 				wss,
 				wc.Addr,
 				gnet.WithMulticore(true),
+				gnet.WithWriteBufferCap(1024*1024),
 				gnet.WithReusePort(true),
 				gnet.WithTicker(true),
 				gnet.WithTCPKeepAlive(time.Minute*5),
