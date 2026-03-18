@@ -12,7 +12,39 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
+
+const (
+	defaultWriteTimeout = 3 * time.Second
+	defaultReadBufSize  = 256 * 1024
+	defaultSendBufSize  = 1024
+)
+
+type gameSession struct {
+	alias  string
+	conn   net.Conn
+	reader *bufio.Reader
+
+	send chan []byte
+	once sync.Once
+}
+
+func newGameSession(alias string, conn net.Conn, reader *bufio.Reader) *gameSession {
+	return &gameSession{
+		alias:  alias,
+		conn:   conn,
+		reader: reader,
+		send:   make(chan []byte, defaultSendBufSize),
+	}
+}
+
+func (gs *gameSession) close() {
+	gs.once.Do(func() {
+		close(gs.send)
+		_ = gs.conn.Close()
+	})
+}
 
 type TcpServer struct {
 	addr string
@@ -61,18 +93,7 @@ func (ts *TcpServer) Run() {
 	defer listener.Close()
 	logger.Log.Info("\033[0;32;40mGateway TCP Server Is Listening...\033[0m")
 
-	go func() {
-		for msg := range ts.inMsg {
-			b, _ := json.Marshal(msg)
-			if c, ok := ts.gameConn.Load(msg.Server); ok { // 发给对应游戏服务
-				_, err := c.(net.Conn).Write(append(b, '\n'))
-				if err != nil {
-					logger.Log.Errorf("TcpServer Write Error: %+v", err)
-				}
-				logger.Log.Infof("TcpServer Write Msg To GameServer : %+v", string(b))
-			}
-		}
-	}()
+	go ts.dispatchLoop()
 
 	for {
 		conn, err := listener.Accept()
@@ -87,13 +108,43 @@ func (ts *TcpServer) Run() {
 		alias, err := reader.ReadString('\n') // 获取游戏服务别名
 		if err != nil {
 			logger.Log.Errorf("TcpServer Run ReadString Error: %+v", err)
+			_ = conn.Close()
 			continue
 		}
 		cleanAlias := strings.TrimSpace(alias)
 		if !ts.isAllowedGame(cleanAlias) {
+			logger.Log.Warnf("TcpServer reject unknown game alias: %s", cleanAlias)
+			_ = conn.Close()
 			continue
 		}
-		go ts.handleRequest(cleanAlias, conn)
+		go ts.handleRequest(cleanAlias, conn, reader)
+	}
+}
+
+func (ts *TcpServer) dispatchLoop() {
+	for msg := range ts.inMsg {
+		b, err := json.Marshal(msg)
+		if err != nil {
+			logger.Log.Errorf("TcpServer dispatch marshal Error: %+v", err)
+			continue
+		}
+		if c, ok := ts.gameConn.Load(msg.Server); ok { // 发给对应游戏服务
+			session := c.(*gameSession)
+			if !ts.enqueueMessage(session, append(b, '\n')) {
+				logger.Log.Warnf("TcpServer drop msg to game server %s due to full queue", msg.Server)
+				continue
+			}
+			logger.Log.Infof("TcpServer Write Msg To GameServer : %+v", string(b))
+		}
+	}
+}
+
+func (ts *TcpServer) enqueueMessage(session *gameSession, msg []byte) bool {
+	select {
+	case session.send <- msg:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -122,30 +173,57 @@ func (ts *TcpServer) Stop() {
 			_ = ts.listener.Close()
 		}
 		ts.gameConn.Range(func(_, value any) bool {
-			_ = value.(net.Conn).Close()
+			value.(*gameSession).close()
 			return true
 		})
 	})
 }
 
-func (ts *TcpServer) handleRequest(alias string, conn net.Conn) {
-	defer conn.Close() // 关闭连接
+func (ts *TcpServer) handleRequest(alias string, conn net.Conn, reader *bufio.Reader) {
+	session := newGameSession(alias, conn, reader)
+	if old, loaded := ts.gameConn.LoadOrStore(alias, session); loaded {
+		oldSession := old.(*gameSession)
+		oldSession.close()
+		ts.gameConn.Store(alias, session)
+	}
+	defer func() {
+		ts.gameConn.Delete(alias)
+		session.close()
+	}()
 
-	// 新增游戏
-	ts.gameConn.Store(alias, conn)
-	defer ts.gameConn.Delete(alias)
+	go ts.writeToGameServer(session)
 
-	scanner := bufio.NewScanner(conn)
+	scanner := bufio.NewScanner(session.reader)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, defaultReadBufSize)
 	for scanner.Scan() {
-		var buf = scanner.Bytes()
-		logger.Log.Infof("Message incoming: %s", string(buf))
+		var payload = scanner.Bytes()
+		logger.Log.Infof("Message incoming: %s", string(payload))
 		var res = new(dto.CommonRes)
-		err := json.Unmarshal(buf, res)
+		err := json.Unmarshal(payload, res)
 		if err != nil {
 			logger.Log.Errorf("TcpServer handleRequest Unmarshal Error: %+v", err)
 			break
 		}
 		res.Server = alias
-		ts.outMsg <- res
+		select {
+		case ts.outMsg <- res:
+		case <-ts.ctx.Done():
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		logger.Log.Errorf("TcpServer scanner Error: %+v", err)
+	}
+}
+
+func (ts *TcpServer) writeToGameServer(session *gameSession) {
+	for msg := range session.send {
+		_ = session.conn.SetWriteDeadline(time.Now().Add(defaultWriteTimeout))
+		if _, err := session.conn.Write(msg); err != nil {
+			logger.Log.Errorf("TcpServer Write Error: %+v", err)
+			session.close()
+			return
+		}
 	}
 }
