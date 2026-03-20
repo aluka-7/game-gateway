@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package tcp;
+
+option go_package = "github.com/aluka-7/game-gateway/tcp";
+
+message TcpMessage {
+  string server = 1;
+  string event = 2;
+  int64 seq = 3;
+  int64 user_id = 4;
+  int32 code = 5;
+  string msg = 6;
+  bytes data = 7;
+}
