@@ -1,34 +1,34 @@
 # 🚪 Gateway
 
-游戏网关服务（WebSocket ↔ TCP 转发层）
+Game Gateway Service (WebSocket ↔ TCP Forwarding Layer)
 
-Game Gateway 是一个基于 Go 的游戏网关服务，实现 WebSocket 客户端接入、内部 TCP 转发至游戏服务、用户认证（JWT）、心跳检测与多游戏路由，适用于后端实时游戏系统架构。
-
----
-
-## 📦 功能简介
-
-- 🌐 WebSocket 接入（客户端）
-- 🔌 TCP 转发（游戏服务）
-- 🔐 用户认证（JWT）
-- ❤️ 心跳检测（Ping/Pong）
-- 🎮 多游戏服务路由
+Game Gateway is a Go-based game gateway service that implements WebSocket client access, internal TCP forwarding to the game service, user authentication (JWT), heartbeat detection, and multi-game routing. It is suitable for backend real-time game system architectures.
 
 ---
 
-## 🚀 快速开始
+## 📦 Feature Overview
 
-### 1️⃣ 前置依赖
-
-#### 🧩 启动 Zookeeper
-
-用于配置中心（存储网关配置）
+- 🌐 WebSocket Access (Client)
+- 🔌 TCP Forwarding (Game Service)
+- 🔐 User Authentication (JWT)
+- ❤️ Heartbeat Detection (Ping/Pong)
+- 🎮 Multi-Game Service Routing
 
 ---
 
-### 2️⃣ 生成 UAF 配置
+## 🚀 Quick Start
 
-用于连接 Zookeeper（加密配置）
+### 1️⃣ Prerequisites
+
+#### 🧩 Start Zookeeper
+
+Used for configuration center (storage gateway configuration)
+
+---
+
+### 2️⃣ Generate UAF Configuration
+
+Used for connecting to Zookeeper (encrypted configuration)
 
 ```go
 key := configuration.DesKey
@@ -37,36 +37,36 @@ src := "{\"backend\":\"127.0.0.1:2181\",\"username\":\"guest\",\"password\":\"gu
 enc, _ := utils.Encrypt([]byte(src), []byte(key))
 cipher := base64.URLEncoding.EncodeToString(enc)
 
-fmt.Println("密文：", cipher)
+fmt.Println("ciphertext：", cipher)
 ```
 
 ---
 
-### 3️⃣ 配置 UAF
+### 3️⃣ Configure UAF
 
-提供两种方式：
+Two methods are provided:
 
-#### ✅ 方式一：环境变量（推荐）
+#### ✅ Method 1: Environment Variables (Recommended)
 
 ```bash
-export UAF="你的密文"
+export UAF="your ciphertext"
 ```
 
-#### ✅ 方式二：文件
+#### ✅ Method 2: File
 
 ```bash
-echo "你的密文" > configuration.uaf
+echo "your ciphertext" > configuration.uaf
 ```
 
 ---
 
-## ⚙️ 配置说明
+## ⚙️ Configuration Instructions
 
 ---
 
-### 🎮 网关业务配置
+### 🎮 Gateway Service Configuration
 
-📍 路径：`/system/app/game/gateway`
+📍 Path: `/system/app/game/gateway`
 
 ```json
 {
@@ -74,13 +74,13 @@ echo "你的密文" > configuration.uaf
 }
 ```
 
-> 允许接入的游戏服务列表（TCP）
+> List of allowed game services (TCP)
 
 ---
 
-### 🌐 web 配置
+### 🌐 Web Configuration
 
-📍 路径：`/system/base/server/10000`
+📍 Path: `/system/base/server/10000`
 
 ```json
 {
@@ -89,9 +89,9 @@ echo "你的密文" > configuration.uaf
 }
 ```
 
-### 🔗 WebSocket 配置
+### 🔗 WebSocket Configuration
 
-📍 路径：`/system/base/server/ws/10000`
+📍 Path: `/system/base/server/ws/10000`
 
 ```json
 {
@@ -99,13 +99,13 @@ echo "你的密文" > configuration.uaf
 }
 ```
 
-> 客户端连接地址
+> Client Connection Address
 
 ---
 
-### 🧠 Redis 配置
+### 🧠 Redis Configuration
 
-📍 路径：`/system/base/cache/10000`
+📍 Path: `/system/base/cache/10000`
 
 ```json
 {
@@ -120,9 +120,9 @@ echo "你的密文" > configuration.uaf
 
 ---
 
-### 🔌 TCP 配置（游戏服务）
+### 🔌 TCP Configuration (Game Server)
 
-📍 路径：`/system/base/server/tcp/10000`
+📍 Path: `/system/base/server/tcp/10000`
 
 ```json
 {
@@ -130,26 +130,27 @@ echo "你的密文" > configuration.uaf
 }
 ```
 
-> 游戏服务连接入口（内部通信）
+> Game Service Connection Entry Point (Internal Communication)
 
 ---
 
-## ▶️ 启动服务
+## ▶️ Start the Service
 
 ```bash
 go run .
+
 ```
 
 ---
 
-## 🔐 鉴权与协议约定
+## 🔐 Authentication and Protocol Conventions
 
-### WebSocket 鉴权
+### WebSocket Authentication
 
-- 客户端连接后需在 **5 秒内**发送 `system/auth` 消息，否则连接会被断开。
-- `data.token` 格式必须为：`Bearer <JWT>`。
+- After connecting, the client must send a `system/auth` message within **5 seconds**, otherwise the connection will be closed.
+- The `data.token` format must be: `Bearer <JWT>`.
 
-示例：
+Example:
 
 ```json
 {
@@ -162,22 +163,21 @@ go run .
 }
 ```
 
-### 心跳
+### Heartbeat
 
-- 客户端应定时发送 `system/ping`。
-- 服务端回复 `system/pong`。
-- **30 秒**未更新心跳会被断开。
+- The client should send `system/ping` periodically.
+- The server replies with `system/pong`.
+- The connection will be closed if the heartbeat is not updated within **30 seconds**.
 
-### TCP 首包约定
+### TCP First Packet Conventions
 
-- 游戏服务连入 TCP 后，首包必须是 `alias + "\n"`（例如：`wingo\n`）。
-- 后续消息使用 `length-frame + protobuf`。
+- After the game service connects to TCP, the first packet must be `alias + "\n"` (e.g., `wingo\n`). - Subsequent messages will use `length-frame + protobuf`.
 
 ---
 
-## 🧪 测试
+## 🧪 Testing
 
-### 🔗 WebSocket 客户端
+### 🔗 WebSocket Client
 
 ```bash
 go run ./cmd/ws-client
@@ -185,7 +185,7 @@ go run ./cmd/ws-client
 
 ---
 
-### 🔌 TCP 客户端
+### 🔌 TCP Client
 
 ```bash
 go run ./cmd/tcp-client
@@ -193,7 +193,7 @@ go run ./cmd/tcp-client
 
 ---
 
-## 🧠 架构说明
+## 🧠 Architecture Description
 
 ```
 [ Client ]
@@ -207,31 +207,32 @@ go run ./cmd/tcp-client
 
 ---
 
-## ⚠️ 注意事项
+## ⚠️ Notes
 
-- 游戏服务需先连接 TCP 并发送 alias（首包）
-- alias 必须在 `gameList` 中配置
-- 认证超时（5 秒）会被断开
-- 心跳超时（30 秒）自动断开连接
-- TCP 使用 length-frame + protobuf 协议
+- The game service must first connect to TCP and send an alias (first packet)
+- The alias must be configured in `gameList`
+- Authentication timeout (5 seconds) will result in disconnection
+- Heartbeat timeout (30 seconds) will automatically disconnect
+- TCP uses length-frame + protobuf Protocol
 
 ---
 
-## 📌 常用命令
+## 📌 Common Commands
 
 ```bash
-# 启动网关
+# Start the gateway
 go run .
 
-# 运行 WS 测试客户端
+# Run the WS test client
 go run ./cmd/ws-client
 
-# 运行 TCP 测试客户端
+# Run the TCP test client
 go run ./cmd/tcp-client
 ```
 
-## 📊 监控
-Prometheus 指标地址：
+## 📊 Monitoring
+Prometheus metrics address:
+
 ```json
 http://ip:7070/metrics
 ```
