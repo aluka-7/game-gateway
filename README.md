@@ -68,7 +68,7 @@ echo "你的密文" > configuration.uaf
 
 ```json
 {
-  "gameList": ["jumpjumpjump", "little-game"]
+  "gameList": ["wingo"]
 }
 ```
 
@@ -140,9 +140,40 @@ go run .
 
 ---
 
-## 🧪 测试
+## 🔐 鉴权与协议约定
+
+### WebSocket 鉴权
+
+- 客户端连接后需在 **5 秒内**发送 `system/auth` 消息，否则连接会被断开。
+- `data.token` 格式必须为：`Bearer <JWT>`。
+
+示例：
+
+```json
+{
+  "server": "system",
+  "event": "auth",
+  "seq": 1740000000,
+  "data": {
+    "token": "Bearer <your-jwt>"
+  }
+}
+```
+
+### 心跳
+
+- 客户端应定时发送 `system/ping`。
+- 服务端回复 `system/pong`。
+- **30 秒**未更新心跳会被断开。
+
+### TCP 首包约定
+
+- 游戏服务连入 TCP 后，首包必须是 `alias + "\n"`（例如：`wingo\n`）。
+- 后续消息使用 `length-frame + protobuf`。
 
 ---
+
+## 🧪 测试
 
 ### 🔗 WebSocket 客户端
 
