@@ -2,20 +2,11 @@ package ws
 
 import (
 	"errors"
-	"fmt"
 	"github.com/aluka-7/cache"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 var jwtSecret = []byte("kX9Gxcd1-@0eV-*1")
-
-const (
-	UserTokenKey = "system:user:token:%d"
-)
-
-func GetUserTokenKey(userId int64) string {
-	return fmt.Sprintf(UserTokenKey, userId)
-}
 
 type User struct {
 	Id int64 `json:"id"`
@@ -58,8 +49,8 @@ func Intercept(ce cache.Provider, authHeader string) *UserClaims {
 			return nil
 		}
 
-		// todo 校验 jwt-id 跟 redis 保存是否对得上
-		//if ce.String(context.Background(), GetUserTokenKey(claims.User.Id)) != claims.ID {
+		// todo 校验 jwt-id 跟 redis 保存的key是否对得上
+		//if claims.ID != ce.String(context.Background(), dto.GetUserTokenKey(claims.User.Id)) {
 		//	return nil
 		//}
 		return claims
