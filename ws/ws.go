@@ -72,7 +72,7 @@ func NewWsServer(cfg *dto.GatewayConfig, ce cache.Provider, tcpAddr string) gnet
 
 		inMsg:   make(chan *dto.CommonReq, 1024),
 		outMsg:  make(chan *dto.CommonRes, 1024),
-		limiter: rate.NewLimiter(rate.Limit(2000), 10), // 初始令牌10个，每秒产生200个令牌，相当于每秒允许同时200个连接进来
+		limiter: rate.NewLimiter(rate.Limit(100), 300),
 	}
 }
 
@@ -156,6 +156,7 @@ func (w *Server) broadcast(server string, payload []byte) {
 
 func (w *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
 	if !w.limiter.Allow() {
+		logger.Log.Info("rate limit exceeded")
 		return nil, gnet.Close
 	}
 	wc := NewWsCodec()
