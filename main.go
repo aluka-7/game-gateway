@@ -16,11 +16,11 @@ import (
 func App(conf configuration.Configuration) {
 	var wc dto.WsConfig
 	if err := conf.Clazz("base", "server", "ws", wire.SystemId, &wc); err != nil {
-		panic("加载WS运行配置出错")
+		panic("WS runtime configuration loading error")
 	}
 	var tc dto.TcpConfig
 	if err := conf.Clazz("base", "server", "tcp", wire.SystemId, &tc); err != nil {
-		panic("加载TCP运行配置出错")
+		panic("TCP runtime configuration loading error")
 	}
 
 	ce := cache.Engine(wire.SystemId, conf)
