@@ -1,7 +1,7 @@
 FROM golang:1.24.6 AS builder
 WORKDIR /build
 
-# 环境变量
+# Environment variables
 ENV GOPROXY=https://goproxy.cn \
     GO111MODULE=on \
     CGO_ENABLED=0 \
