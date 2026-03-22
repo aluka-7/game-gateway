@@ -103,7 +103,6 @@ func (w *wsCodec) upgrade(c gnet.Conn) (ok bool, action gnet.Action) {
 
 	tmpReader := bytes.NewReader(buf.Bytes())
 	oldLen := tmpReader.Len()
-	logger.Log.Infof("do Upgrade")
 
 	hs, err := ws.Upgrade(readWrite{tmpReader, c})
 	skipN := oldLen - tmpReader.Len()
